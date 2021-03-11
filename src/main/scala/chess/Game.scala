@@ -3,6 +3,8 @@ package chess
 import cats.data.EitherT
 import cats.effect.IO
 import cats.syntax.either._
+import cats.syntax.option._
+import cats.syntax.functor._
 
 /** Knows the rules of the game
   * Can verify if a move is legal, if a king is in check or if the game has ended either by draw or checkmate
@@ -13,6 +15,7 @@ case class Game(
   whiteCaptures: Set[Piece] = Set.empty,
   blackCaptures: Set[Piece] = Set.empty,
   moveLog: List[String] = Nil,
+  lastMove: Option[(Piece, Position)] = None,
 ) {
 
   def print(highlights: Set[Position]): IO[Unit] = {
@@ -76,14 +79,40 @@ case class Game(
     )
   } yield ()
 
-  def simpleCanCapture(piece: Piece, target: Piece): Either[Error, Unit] = for {
-    _ <- simpleCanAttack(piece, target.position)
+  def simpleCanCapture(piece: Piece, target: Piece): Either[Error, Position] = for {
     _ <- Either.cond(
       piece.colour != target.colour,
       (),
       TargetIsAllied(this, piece.position, target.position),
     )
-  } yield ()
+    position <- enPassantCanCapture(piece, target).orElse(simpleCanAttack(piece, target.position).as(target.position))
+  } yield position
+
+  def enPassantCanCapture(piece: Piece, target: Piece): Either[Error, Position] = for {
+    (lastMovedPiece, lastMoveTargetPosition) <- lastMove
+      .collect { case lastMove @ (_: Pawn, _) =>
+        lastMove
+      }
+      .toRight(EnPassantNotPossible)
+    _ <- Either.cond(
+      math.abs(lastMovedPiece.position.rankInt - lastMoveTargetPosition.rankInt) == 2,
+      (),
+      NoPreviousDoubleStepMoveEnPassant(this, piece.position, target.position),
+    )
+    _ <- Either.cond(
+      piece.colour.perColour(piece.position.rankInt == 4)(piece.position.rankInt == 3),
+      (),
+      WrongRankForEnPassant(this, piece.position, target.position),
+    )
+    _ <- Either.cond(
+      math.abs(piece.position.fileInt - target.position.fileInt) == 1,
+      (),
+      WrongFileForEnPassant(this, piece.position, target.position),
+    )
+    position <- lastMovedPiece.colour
+      .perColour(lastMovedPiece.position + (0, 1))(lastMovedPiece.position + (0, -1))
+      .toRight(EnPassantNotPossible)
+  } yield position
 
   def canMoveTo(piece: Piece, target: Position): Either[Error, Game] = for {
     _ <- simpleCanMoveTo(piece, target)
@@ -98,21 +127,21 @@ case class Game(
   private def moveTo(piece: Piece, target: Position): Either[Error, Game] =
     canMoveTo(piece, target)
 
-  def canCapture(piece: Piece, target: Piece): Either[Error, Game] =
+  def canCapture(piece: Piece, targetPiece: Piece): Either[Error, Game] =
     for {
-      _ <- simpleCanCapture(piece, target)
+      target <- simpleCanCapture(piece, targetPiece)
       _ <- checkInitiative(piece)
-      boardAfterCapture = unsafeCapture(piece, target).withSwappedInitiative
-      game <- target match {
+      boardAfterCapture = unsafeCapture(piece, targetPiece, target).withSwappedInitiative
+      game <- targetPiece match {
         case _ if boardAfterCapture.kingIsInCheck(piece.colour) =>
-          KingWouldEndUpInCheck(this, piece.position, target.position).asLeft
+          KingWouldEndUpInCheck(this, piece.position, targetPiece.position).asLeft
 
         case _ => boardAfterCapture.asRight
       }
     } yield game
 
-  private def capture(piece: Piece, target: Piece): Either[Error, Game] =
-    canCapture(piece, target)
+  private def capture(piece: Piece, targetPiece: Piece): Either[Error, Game] =
+    canCapture(piece, targetPiece)
 
   /** List of moves the given piece can make only doing the simple checks */
   def simpleMoves(piece: Piece): Set[Position] = piece.moves.filter(simpleCanMoveTo(piece, _).isRight)
@@ -130,7 +159,7 @@ case class Game(
     checkCaptures(piece, (simpleCanCapture(piece, _)).andThen(_.toOption))
 
   def captures(piece: Piece): Set[Piece] =
-    checkCaptures(piece, (canCapture(piece, _)).andThen(_.toOption))
+    checkCaptures(piece, ((targetPiece: Piece) => canCapture(piece, targetPiece)).andThen(_.toOption))
 
   private def castle(
     rookPosition: Position,
@@ -143,9 +172,6 @@ case class Game(
     for {
       _ <- Either.cond(!king.hasMoved, (), KingAlreadyMoved(king))
       pieceAtRookPosition <- pieceAt(rookPosition)
-      _ = println(s"rookPosition = $rookPosition")
-      _ = println(s"pieceAtRookPosition = $pieceAtRookPosition")
-      _ = println(s"board = $board")
       rook <- pieceAtRookPosition match {
         case rook: Rook if !rook.hasMoved => rook.asRight
         case _                            => RookAlreadyMoved(pieceAtRookPosition).asLeft
@@ -189,10 +215,13 @@ case class Game(
   private def addToLog(move: String): Game = copy(moveLog = moveLog :+ move)
 
   private def unsafeMoveTo(piece: Piece, target: Position): Game =
-    updateBoard(_.removePieces(piece).addPieces(piece.moveToPosition(target)))
+    copy(board = board.removePieces(piece).addPieces(piece.moveToPosition(target)), lastMove = Some((piece, target)))
 
-  private def unsafeCapture(piece: Piece, target: Piece): Game =
-    updateBoard(_.removePieces(piece, target).addPieces(piece.moveToPosition(target.position)))
+  private def unsafeCapture(piece: Piece, targetPiece: Piece, target: Position): Game =
+    copy(
+      board = board.removePieces(piece, targetPiece).addPieces(piece.moveToPosition(target)),
+      lastMove = Some((piece, target)),
+    )
 
   private def findKing(colour: Colour): King =
     colourPieces(colour)
@@ -205,7 +234,34 @@ case class Game(
     moves(piece).isEmpty && captures(piece).isEmpty
   }
 
-  lazy val isDraw: Boolean = ???
+  private lazy val isStalemate = initiativePieces.flatMap(moves).isEmpty
+
+  private lazy val insufficientMaterial = {
+    val pieces = board.pieces.values
+    pieces.size match {
+      case 2 => true // King vs King
+      case 3 =>
+        pieces.exists {
+          case _: Bishop => true //King and Bishop vs King
+          case _: Knight => true //King and Knight vs King
+          case _         => false
+        }
+      case 4 =>
+        board.blacks.exists {
+          case (blackBishopPosition, _: Bishop) =>
+            board.blacks.exists {
+              case (whiteBishopPosition, _: Bishop) =>
+                //King and Bishop vs King and Bishop on same colour
+                blackBishopPosition.squareColour == whiteBishopPosition.squareColour
+              case _ => false
+            }
+          case _ => false
+        }
+      case _ => false
+    }
+  }
+
+  lazy val isDraw: Boolean = isStalemate || insufficientMaterial
 
   /** Checks if initiative king is in checkmate */
   lazy val isCheckMate: Boolean = kingIsInCheck(initiative) && noPossibleMoves
@@ -246,6 +302,9 @@ case class Game(
       case CapturePromotion(pawn, target, promotion, mustEndInCheck, mustEndInMate, move) =>
         capture(promotion.create(pawn.colour, pawn.position), target)
           .finalizeMove(mustEndInCheck, mustEndInMate, move)(pawn.position, target.position)
+
+      case EnPassantCapture(piece, targetPosition, target, mustEndInCheck, mustEndInMate, move) =>
+        capture(piece, target).finalizeMove(mustEndInCheck, mustEndInMate, move)(piece.position, targetPosition)
     }
 
   def executeMoves(firstMove: String, moreMoves: String*): EitherT[IO, Error, Game] =
@@ -254,7 +313,7 @@ case class Game(
     }
 
   def executeMoves(moves: List[String]): EitherT[IO, Error, Game] = executeMoves(moves.head, moves.tail: _*)
-  def executePGNMoves(moves: String): EitherT[IO, Error, Game] = executeMoves(Notation.convertFromPGN(moves))
+  def executePGNMoves(moves: String): EitherT[IO, Error, Game] = executeMoves(Parser.movesFromPGN(moves))
 
 }
 

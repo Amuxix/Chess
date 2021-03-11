@@ -9,13 +9,6 @@ sealed abstract class Position(val fileInt: Int, val rankInt: Int) extends HasIc
   lazy val squareColour: Colour = if (fileInt % 2 == rankInt % 2) White else Black
 
   lazy val icon: String = " "
-  /*  lazy val icon: String = {
-    if (fileInt % 2 == rankInt % 2) "█"
-    else " "
-    //else " "
-    //else "  "
-    //else " "
-  }*/
 
   def +(t: (Int, Int)): Option[Position] = t match {
     case (file, rank) => byPositionTuple.get(this.fileInt + file, this.rankInt + rank)
@@ -23,7 +16,7 @@ sealed abstract class Position(val fileInt: Int, val rankInt: Int) extends HasIc
 
   def to(position: Position): List[Position] = {
     def aToB(a: Int, b: Int) =
-      (a - b) match {
+      a - b match {
         case x if x >= -1 && x <= 1 => List.empty
         case x if x > 1             => List.range(b + 1, a)
         case x if x < -1            => List.range(b - 1, a, -1)

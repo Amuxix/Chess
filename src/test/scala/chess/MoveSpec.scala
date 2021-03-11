@@ -10,7 +10,7 @@ import org.scalatest.wordspec.AnyWordSpec
       "it be king side" in {
         val board = Board
           .withPieces(
-            (A8, King(Black)),
+            (A8, King(Black)),p
             (E1, King(White)),
             (H1, Rook(White)),
           )

@@ -1,40 +1,38 @@
 package chess
 
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.data.EitherT
+import cats.effect.{IO, IOApp}
 
 import scala.io.StdIn.readLine
-import scala.util.Random
 
 object Main extends IOApp.Simple {
 
   //Check cats Resource loop method for weird continue thing.
-  /*def getNewBoard(board: Board): IO[Board] = {
-    def continue(newBoard: Either[Error, Board]): IO[Board] = retry(newBoard)
-    def retry(newBoard: Either[Error, Board]): IO[Board] =
-      newBoard match {
-        case Left(error) =>
-          IO(readLine(s"$error, please input new move: ")).flatMap { move =>
-            continue(board.executeMoves(move))
-          }
-        case Right(value) => IO.pure(value)
+  def getNewBoard(game: Game): IO[Game] = {
+    def continue(newGame: EitherT[IO, Error, Game]): IO[Game] = retry(newGame)
+    def retry(newGame: EitherT[IO, Error, Game]): IO[Game] =
+      newGame.valueOrF { error =>
+        IO(readLine(s"${error.message}, please input new move: ")).flatMap { move =>
+          continue(game.executeMove(move))
+        }
       }
-    IO(readLine(s"${board.initiative}'s move: ")).flatMap(move => retry(board.executeMoves(move)))
-  }*/
+    IO(readLine(s"${game.initiative}'s move: ")).flatMap(move => retry(game.executeMoves(move)))
+  }
 
-  /*override def run(args: List[String]): IO[ExitCode] = {
-    def continue(board: IO[Board]): IO[Board] = go(board)
-    def go(board: IO[Board]): IO[Board] =
+  override def run: IO[Unit] = {
+    def continue(board: IO[Game]): IO[Game] = go(board)
+    def go(board: IO[Game]): IO[Game] =
       board.flatMap {
         case board if board.isDraw || board.isCheckMate => IO.pure(board)
         case board =>
-          board.print *> continue(getNewBoard(board))
+          board.print(Set.empty) *> continue(getNewBoard(board))
 
       }
 
-    go(IO.pure(Board.initial)).as(ExitCode.Success)
-  }*/
+    go(IO.pure(Game.initial)).void
+  }
 
-  import cats.syntax.flatMap._
+  /*  import cats.syntax.flatMap._
   import scala.concurrent.duration._
 
   def spinner(delay: FiniteDuration): IO[Unit] = {
@@ -54,7 +52,7 @@ object Main extends IOApp.Simple {
         _ <- IO.sleep(delay)
       } yield (number + 1) % spinnerChars.length
     }
-  }
+  }*/
 
   //override def run: IO[Unit] = IO.println("\uD83E\uDF00")
 
@@ -62,9 +60,6 @@ object Main extends IOApp.Simple {
 
   /*override def run: IO[Unit] =
     Board.initial.executeMoves("e4", "d5", "exd5").fold(error => IO.println(error), _ => IO.unit)*/
-
-  override def run: IO[Unit] =
-    Game.initial.executeMoves("e4").fold(error => IO.println(error), _ => IO.unit)
 
   /*override def run(args: List[String]): IO[ExitCode] =
     IO {
