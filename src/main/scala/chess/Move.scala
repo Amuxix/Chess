@@ -9,10 +9,19 @@ sealed abstract class Move {
 }
 
 case class SimpleMove(piece: Piece, target: Position, mustEndInCheck: Boolean, mustEndInMate: Boolean, move: String)
-  extends Move
+    extends Move
 
 case class Capture(piece: Piece, target: Piece, mustEndInCheck: Boolean, mustEndInMate: Boolean, move: String)
-  extends Move
+    extends Move
+
+case class EnPassantCapture(
+  piece: Piece,
+  target: Position,
+  targetPiece: Piece,
+  mustEndInCheck: Boolean,
+  mustEndInMate: Boolean,
+  move: String,
+) extends Move
 
 case class KingSideCastle(mustEndInCheck: Boolean, mustEndInMate: Boolean, move: String) extends Move
 

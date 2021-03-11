@@ -91,3 +91,21 @@ case class MoveIsNotCheck(game: Game, highlightedPositions: Position*) extends E
 case class MoveIsNotMate(game: Game, highlightedPositions: Position*) extends Error with HighlightedPositions {
   override val message: String = "Move did not result in a checkmate"
 }
+
+case object EnPassantNotPossible extends Error {
+  override val message: String = "En passant not possible"
+}
+
+case class WrongRankForEnPassant(game: Game, highlightedPositions: Position*) extends Error with HighlightedPositions {
+  override val message: String = "The capturing pawn must be on its fifth rank"
+}
+
+case class WrongFileForEnPassant(game: Game, highlightedPositions: Position*) extends Error with HighlightedPositions {
+  override val message: String = "The captured pawn must be on an adjacent file"
+}
+
+case class NoPreviousDoubleStepMoveEnPassant(game: Game, highlightedPositions: Position*)
+    extends Error
+    with HighlightedPositions {
+  override val message: String = "The captured pawn must have just moved two squares in a single move"
+}

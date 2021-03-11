@@ -51,6 +51,13 @@ class MoveParser(game: Game) {
             targetPiece <- game.pieceAt(target)
           } yield CapturePromotion(pawn, targetPiece, promotion, mustEndInCheck, mustEndInMate, move)
 
+        case (_, true) if game.pieceAt(target).isLeft => //Check for en passant
+          for {
+            targetPosition <- game.initiative.perColour(target + (0, -1))(target + (0, 1)).toRight(EnPassantNotPossible)
+            targetPiece <- game.pieceAt(targetPosition)
+            piece <- pieceToMove(helpers.possibleCaptors(originPieceType, targetPiece))
+          } yield EnPassantCapture(piece, target, targetPiece, mustEndInCheck, mustEndInMate, move)
+
         case (_, true) =>
           for {
             targetPiece <- game.pieceAt(target)
@@ -142,9 +149,6 @@ private class ParserHelper(game: Game) {
         }
       }
       .toRight {
-        println(originFile)
-        println(originRank)
-        println(possiblePieces)
         error
       }
   }

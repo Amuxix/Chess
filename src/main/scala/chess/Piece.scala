@@ -91,13 +91,7 @@ case class King(colour: Colour, position: Position, hasMoved: Boolean = false) e
 
 object Queen extends SameCaptures {
 
-  override lazy val moves: Set[(Int, Int)] =
-    for {
-      file <- Set.range(-7, 8)
-      rank <- Set.range(-7, 8)
-      if file != 0 || rank != 0
-      if rank == 0 || file == 0 || math.abs(rank) == math.abs(file)
-    } yield (file, rank)
+  override lazy val moves: Set[(Int, Int)] = Bishop.moves ++ Rook.moves
 
   override def create(colour: Colour, position: Position): Piece = Queen(colour, position, hasMoved = true)
 }

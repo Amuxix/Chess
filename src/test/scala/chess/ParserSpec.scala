@@ -1,9 +1,14 @@
 package chess
 
-class NotationParserSpec extends ChessSpec {
+import cats.data.OptionT
+import cats.effect.IO
+import org.scalatest.OptionValues
+import cats.effect.unsafe.implicits.global
+
+class ParserSpec extends ChessSpec with OptionValues {
   "Notation parser" should {
     "parse moves correctly" in {
-      val moves = Notation.convertFromPGN(
+      val moves = Parser.movesFromPGN(
         "1. e4 c5 2. Nc3 Nc6 3. f4 g6 4. Nf3 Bg7 5. Bb5 Nd4 6. a4 e6 7. e5 a6 8. Bc4 d6" +
           " 9. exd6 Qxd6 10. d3 Ne7 11. Ne4 Qc7 12. c3 Nxf3+ 13. Qxf3 O-O 14. Be3 b6 15. Nxc5 bxc5 16. Qxa8 Nc6 17. " +
           "Bxa6 Bd7 18. Qb7 Qd6 19. Qb5 Nd4 20. Qc4 Nc2+ 21. Kd2 Nxe3 22. Kxe3 Bc6 23. d4 cxd4+ 24. cxd4 Bxg2 25. Rhg1 " +
@@ -136,6 +141,18 @@ class NotationParserSpec extends ChessSpec {
         "Qxe1#",
       )
       moves shouldEqual converted
+    }
+    "parse FEN correctly" in {
+      Parser.gameFromFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").value shouldEqual Game.initial
+    }
+    "parse FEN correctly with en passant enabled" in {
+      Parser
+        .gameFromFEN("rnbqkbnr/1p1ppppp/p7/2pP4/8/8/PPP1PPPP/RNBQKBNR w KQkq c6 0 2")
+        .get
+        .executeMove("dxc6")
+        .value
+        .unsafeRunSync()
+        .isRightOrThrow shouldBe true
     }
   }
 

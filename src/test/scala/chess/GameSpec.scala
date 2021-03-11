@@ -4,6 +4,28 @@ import cats.effect.unsafe.implicits.global
 
 class GameSpec extends ChessSpec {
   "Game" should {
+    "play game with en passant" in {
+      Game.initial
+        .executeMoves(
+          "e4",
+          "a5",
+          "e5",
+          "d5",
+          "exd6",
+        )
+        .value
+        .unsafeRunSync()
+        .isRightOrThrow shouldBe true
+    }
+    "should fail when trying invalid en passant" in {
+      Parser
+        .gameFromFEN("8/8/3p4/KPp4r/1R3p1k/4P3/6P1/8 w - c6 0 1")
+        .get
+        .executeMove("bxc6")
+        .value
+        .unsafeRunSync()
+        .isLeftOrThrow shouldBe true
+    }
     "be able to play full game" in {
       Game.initial
         .executeMoves(
