@@ -1,18 +1,20 @@
-package chess
+package chess.printers
 
 import cats.effect.IO
-import chess.GamePrinter._
+import chess._
+import chess.printers.AsciiPrinter._
+import chess.printers.GamePrinter.PrinterFactory
 
-case class GamePrinter(
+case class AsciiPrinter(
   game: Game,
   lines: List[String],
   hasBoardHeader: Boolean,
-) {
+) extends GamePrinter[String] {
 
   private lazy val pieces: Map[Position, Piece] = game.board.whites ++ game.board.blacks
 
   private def iconFor(position: Position): String = {
-    val icon = pieces.getOrElse(position, position).icon
+    val icon = pieces.get(position).fold(" ")(pieceIcon)
     s" $icon "
   }
 
@@ -74,9 +76,9 @@ case class GamePrinter(
     header +: moveLines
   }
 
-  private def withLines(lines: List[String]): GamePrinter = copy(lines = lines)
+  private def withLines(lines: List[String]): AsciiPrinter = copy(lines = lines)
 
-  def withHighlights(highlightedPositions: Set[Position]): GamePrinter = {
+  override def withHighlights(highlightedPositions: Set[Position]): AsciiPrinter = {
     //TODO Handle case where this has header already
     val lines = highlightedPositions
       .foldLeft(boardMatrix) { case (matrix, position) =>
@@ -86,9 +88,11 @@ case class GamePrinter(
     withLines(lines)
   }
 
-  lazy val withIcons: GamePrinter = withLines(boardWithoutIcons.intercalate(allIcons).mkString.split("\n").toList)
+  override lazy val withIcons: AsciiPrinter = withLines(
+    boardWithoutIcons.intercalate(allIcons).mkString.split("\n").toList,
+  )
 
-  lazy val withHeader: GamePrinter = {
+  override lazy val withHeader: AsciiPrinter = {
     if (hasBoardHeader) {
       val nonBoardHeader = lines.head.slice(boardLength + 1, lines.head.length)
       val headers = createHeader(s"${game.initiative} to move", boardLength) + nonBoardHeader
@@ -98,10 +102,10 @@ case class GamePrinter(
     }
   }
 
-  def withFooter(footer: String): GamePrinter =
+  override def withFooter(footer: String): AsciiPrinter =
     withLines(lines :+ createHeader(footer, lines.head.length))
 
-  lazy val withMoves: GamePrinter = {
+  override lazy val withMoves: AsciiPrinter = {
     val space = " " * spaceBetweenBoardAndLog
     lazy val fillMissingBoardSideLines = " " * boardLength
     val linesWIthHeader = if (hasBoardHeader) lines else " " * boardLength +: lines //Create empty board header
@@ -112,13 +116,17 @@ case class GamePrinter(
     copy(lines = updatedLines, hasBoardHeader = true)
   }
 
-  lazy val string: String = lines.map(_.stripTrailing).mkString("\n", "\n", "")
-  lazy val print: IO[Unit] = IO.println(string)
+  override lazy val create: String = lines.map(_.stripTrailing).mkString("\n", "\n", "")
+  override lazy val show: IO[Unit] = IO.println(create)
 }
 
-object GamePrinter {
+object AsciiPrinter {
+  def apply(game: Game): AsciiPrinter = AsciiPrinter(game, emptyBoard, hasBoardHeader = false)
+  implicit val factory: PrinterFactory[String] = (game: Game) => AsciiPrinter(game)
+
   private val spaceBetweenWhiteAndBlackMoves = 2
   private val spaceBetweenBoardAndLog = 8
+
   private val movePadding = 6
 
   private val emptyBoard = List(
@@ -141,12 +149,9 @@ object GamePrinter {
     "┗━━━┷━━━┷━━━┷━━━┷━━━┷━━━┷━━━┷━━━┛  ",
     "  a   b   c   d   e   f   g   h    ",
   )
-
   lazy val boardLength: Int = emptyBoard.head.length
-  lazy val boardHeight: Int = emptyBoard.length
 
-  def empty(game: Game): GamePrinter = GamePrinter(game, emptyBoard, hasBoardHeader = false)
-  def withIcons(game: Game): GamePrinter = GamePrinter(game, emptyBoard, hasBoardHeader = false).withIcons
+  lazy val boardHeight: Int = emptyBoard.length
 
   private lazy val topLeftCornerReplacements: Map[String, String] = Map(
     "┼" -> "╆",
@@ -249,5 +254,14 @@ object GamePrinter {
 
   implicit class TupleOps(val t: (Int, Int)) extends AnyVal {
     def +(o: (Int, Int)): (Int, Int) = (t._1 + o._1, t._2 + o._2)
+  }
+
+  def pieceIcon(piece: Piece): String = piece match {
+    case Pawn(colour, _, _)   => colour.perColour("♙")("♟")
+    case Knight(colour, _, _) => colour.perColour("♘")("♞")
+    case Bishop(colour, _, _) => colour.perColour("♗")("♝")
+    case Rook(colour, _, _)   => colour.perColour("♖")("♜")
+    case Queen(colour, _, _)  => colour.perColour("♕")("♛")
+    case King(colour, _, _)   => colour.perColour("♔")("♚")
   }
 }

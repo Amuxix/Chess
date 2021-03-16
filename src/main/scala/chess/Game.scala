@@ -3,27 +3,30 @@ package chess
 import cats.data.EitherT
 import cats.effect.IO
 import cats.syntax.either._
-import cats.syntax.option._
 import cats.syntax.functor._
+import chess.printers.GamePrinter.PrinterFactory
 
 /** Knows the rules of the game
   * Can verify if a move is legal, if a king is in check or if the game has ended either by draw or checkmate
   */
 case class Game(
-  initiative: Colour, // Who has the right to move
-  board: Board,
-  whiteCaptures: Set[Piece] = Set.empty,
-  blackCaptures: Set[Piece] = Set.empty,
-  moveLog: List[String] = Nil,
-  lastMove: Option[(Piece, Position)] = None,
+  state: State,
+  whiteCaptures: Set[Piece],
+  blackCaptures: Set[Piece],
+  moveLog: List[String],
 ) {
+  lazy val initiative: Colour = state.initiative
+  lazy val board: Board = state.board
+  lazy val lastMove: Option[(Piece, Position)] = state.lastMove
 
-  def print(highlights: Set[Position]): IO[Unit] = {
-    val printer = GamePrinter.withIcons(this).withHighlights(highlights).withHeader.withMoves
+  lazy val fullMoves: Int = moveLog.size / 2
+
+  def show(highlights: Set[Position])(implicit pf: PrinterFactory[_]): IO[Unit] = {
+    val printer = pf(this).withHighlights(highlights).withIcons.withHeader.withMoves
     if (isCheckMate) {
-      printer.withFooter(s"Checkmate! ${initiative.other} Wins!").print
+      printer.withFooter(s"Checkmate! ${initiative.other} Wins!").show
     } else {
-      printer.print
+      printer.show
     }
   }
 
@@ -34,21 +37,35 @@ case class Game(
 
   lazy val initiativePieces: Set[Piece] = colourPieces(initiative)
 
+  /** Lists the pieces of the given colour that can attack the given position */
+  private def simpleAttackers(position: Position, colour: Colour): Set[Piece] =
+    colourPieces(colour).filter(simpleCanAttack(_, position).isRight)
+
+  /** Check if the given position is under attack by the given colour */
+  private def simpleIsUnderAttack(position: Position, colour: Colour): Boolean =
+    simpleAttackers(position, colour).nonEmpty
+
   /** Lists all positions the piece in the given position threatens.
     */
   def threatenedPositions(piece: Piece): Set[Position] =
-    piece.captures.filter(simpleCanAttack(piece, _).isRight)
+    piece.captures.filter(canAttack(piece, _).isRight)
 
   /** Lists the pieces of the given colour that can attack the given position */
   def attackers(position: Position, colour: Colour): Set[Piece] =
-    colourPieces(colour).filter(simpleCanAttack(_, position).isRight)
+    colourPieces(colour).filter(canAttack(_, position).isRight)
+
+  /** Lists the pieces of the given colour that can move to the given position */
+  def movers(position: Position, colour: Colour): Set[Piece] =
+    colourPieces(colour).filter(canMoveTo(_, position).isRight)
 
   /** Check if the given position is under attack by the given colour */
   def isUnderAttack(position: Position, colour: Colour): Boolean =
     attackers(position, colour).nonEmpty
 
+  def isOccupied(position: Position): Boolean = board.isOccupied(position)
+
   private def obstaclesInTheWay(piece: Piece, startingPosition: Position, target: Position): Boolean =
-    !piece.jumpsPieces && (startingPosition to target).exists(board.isOccupied)
+    !piece.jumpsPieces && (startingPosition to target).exists(isOccupied)
 
   private def checkForObstacles(piece: Piece, target: Position): Either[Error, Unit] =
     Either.cond(!obstaclesInTheWay(piece, piece.position, target), (), ObstacleInTheWay(this, piece.position, target))
@@ -64,7 +81,7 @@ case class Game(
       PieceCantMoveThatWay(this, piece.position, target),
     )
     _ <- Either.cond(
-      !board.isOccupied(target),
+      !isOccupied(target),
       (),
       TargetOccupied(target, this, piece.position, target),
     )
@@ -89,13 +106,24 @@ case class Game(
   } yield position
 
   def enPassantCanCapture(piece: Piece, target: Piece): Either[Error, Position] = for {
-    (lastMovedPiece, lastMoveTargetPosition) <- lastMove
+    _ <- Either.cond(
+      piece.isInstanceOf[Pawn],
+      (),
+      InvalidCapturingPiece,
+    )
+    (lastMovedPawnBeforeMove, lastMoveTargetPosition) <- lastMove
       .collect { case lastMove @ (_: Pawn, _) =>
         lastMove
       }
-      .toRight(EnPassantNotPossible)
+      .toRight(InvalidLastMovedPieceForEnPassant)
+    lastMovedPawn <- pieceAt(lastMoveTargetPosition)
     _ <- Either.cond(
-      math.abs(lastMovedPiece.position.rankInt - lastMoveTargetPosition.rankInt) == 2,
+      lastMovedPawn == target,
+      (),
+      InvalidTargetForEnPassant,
+    )
+    _ <- Either.cond(
+      math.abs(lastMovedPawnBeforeMove.position.rankInt - lastMoveTargetPosition.rankInt) == 2,
       (),
       NoPreviousDoubleStepMoveEnPassant(this, piece.position, target.position),
     )
@@ -109,8 +137,8 @@ case class Game(
       (),
       WrongFileForEnPassant(this, piece.position, target.position),
     )
-    position <- lastMovedPiece.colour
-      .perColour(lastMovedPiece.position + (0, 1))(lastMovedPiece.position + (0, -1))
+    position <- lastMovedPawnBeforeMove.colour
+      .perColour(lastMovedPawnBeforeMove.position + (0, 1))(lastMovedPawnBeforeMove.position + (0, -1))
       .toRight(EnPassantNotPossible)
   } yield position
 
@@ -124,23 +152,39 @@ case class Game(
     )
   } yield boardAfterMove
 
-  private def moveTo(piece: Piece, target: Position): Either[Error, Game] =
+  def moveTo(piece: Piece, target: Position): Either[Error, Game] =
     canMoveTo(piece, target)
+
+  /** Checks if piece could take target piece, regardless of the target piece colour
+    */
+  def canAttack(piece: Piece, target: Position): Either[Error, Unit] =
+    simpleCanAttack(piece, target).flatMap { _ =>
+      pieceAt(target).toOption match {
+        case Some(king: King) if king.colour == piece.colour =>
+          ().asRight
+        case Some(targetPiece) if unsafeCapture(piece, targetPiece, target).kingIsInCheck(piece.colour) =>
+          KingWouldEndUpInCheck(this, piece.position, target).asLeft
+        case None if unsafeMoveTo(piece, target).kingIsInCheck(piece.colour) =>
+          KingWouldEndUpInCheck(this, piece.position, target).asLeft
+        case _ =>
+          ().asRight
+      }
+    }
 
   def canCapture(piece: Piece, targetPiece: Piece): Either[Error, Game] =
     for {
       target <- simpleCanCapture(piece, targetPiece)
       _ <- checkInitiative(piece)
       boardAfterCapture = unsafeCapture(piece, targetPiece, target).withSwappedInitiative
-      game <- targetPiece match {
-        case _ if boardAfterCapture.kingIsInCheck(piece.colour) =>
+      game <-
+        if (boardAfterCapture.kingIsInCheck(piece.colour)) {
           KingWouldEndUpInCheck(this, piece.position, targetPiece.position).asLeft
-
-        case _ => boardAfterCapture.asRight
-      }
+        } else {
+          boardAfterCapture.asRight
+        }
     } yield game
 
-  private def capture(piece: Piece, targetPiece: Piece): Either[Error, Game] =
+  def capture(piece: Piece, targetPiece: Piece): Either[Error, Game] =
     canCapture(piece, targetPiece)
 
   /** List of moves the given piece can make only doing the simple checks */
@@ -182,7 +226,7 @@ case class Game(
         ObstacleInTheWay(this, emptyPositions: _*),
       )
       _ <- Either.cond(
-        !underAttackPositions.exists(isUnderAttack(_, initiative.other)),
+        !underAttackPositions.exists(simpleIsUnderAttack(_, initiative.other)),
         (),
         RouteIsUnderAttack(this, underAttackPositions: _*),
       )
@@ -190,7 +234,7 @@ case class Game(
     } yield unsafeMoveTo(king, finalKingPosition).unsafeMoveTo(rook, finalRookPosition).withSwappedInitiative
   }
 
-  private lazy val kingSideCastle: Either[Error, Game] = {
+  lazy val kingSideCastle: Either[Error, Game] = {
     val rookPosition = initiative.perColour[Position](H1)(H8)
     val emptyPositions = initiative.perColour(List(F1, G1))(List(F8, G8))
     val underAttackPositions = initiative.perColour(List(E1, F1, G1))(List(E8, F8, G8))
@@ -199,7 +243,7 @@ case class Game(
     castle(rookPosition, emptyPositions, underAttackPositions, finalKingPosition, finalRookPosition)
   }
 
-  private lazy val queenSideCastle: Either[Error, Game] = {
+  lazy val queenSideCastle: Either[Error, Game] = {
     val rookPosition = initiative.perColour[Position](A1)(A8)
     val emptyPositions = initiative.perColour(List(B1, C1, D1))(List(B8, C8, D8))
     val underAttackPositions = initiative.perColour(List(C1, D1, E1))(List(C8, D8, E8))
@@ -208,33 +252,37 @@ case class Game(
     castle(rookPosition, emptyPositions, underAttackPositions, finalKingPosition, finalRookPosition)
   }
 
-  def updateBoard(f: Board => Board): Game = copy(board = f(board))
+  def updateBoard(f: Board => Board): Game = copy(state = state.updateBoard(f))
 
-  lazy val withSwappedInitiative: Game = copy(initiative = initiative.other)
+  lazy val withSwappedInitiative: Game = copy(state = state.withSwappedInitiative)
 
   private def addToLog(move: String): Game = copy(moveLog = moveLog :+ move)
 
-  private def unsafeMoveTo(piece: Piece, target: Position): Game =
-    copy(board = board.removePieces(piece).addPieces(piece.moveToPosition(target)), lastMove = Some((piece, target)))
+  private def unsafeMoveTo(piece: Piece, target: Position): Game = {
+    val state = this.state.copy(
+      board = board.removePieces(piece).addPieces(piece.moveToPosition(target)),
+      lastMove = Some((piece, target)),
+    )
+    copy(state = state)
+  }
 
-  private def unsafeCapture(piece: Piece, targetPiece: Piece, target: Position): Game =
-    copy(
+  private def unsafeCapture(piece: Piece, targetPiece: Piece, target: Position): Game = {
+    val state = this.state.copy(
       board = board.removePieces(piece, targetPiece).addPieces(piece.moveToPosition(target)),
       lastMove = Some((piece, target)),
     )
-
-  private def findKing(colour: Colour): King =
-    colourPieces(colour)
-      .collectFirst { case king: King => king }
-      .getOrElse(throw new Exception(s"King not found ${GamePrinter.withIcons(this).string}()"))
-
-  def kingIsInCheck(colour: Colour): Boolean = isUnderAttack(findKing(colour).position, colour.other)
-
-  private lazy val noPossibleMoves = initiativePieces.forall { piece =>
-    moves(piece).isEmpty && captures(piece).isEmpty
+    copy(state = state)
   }
 
-  private lazy val isStalemate = initiativePieces.flatMap(moves).isEmpty
+  def findKing(colour: Colour): King =
+    colourPieces(colour).collectFirst { case king: King => king }.getOrElse(throw new Exception(s"King not found"))
+
+  def kingIsInCheck(colour: Colour): Boolean = simpleIsUnderAttack(findKing(colour).position, colour.other)
+
+  private lazy val noPossibleMovesOrCaptures: Boolean =
+    initiativePieces.flatMap(piece => moves(piece) ++ captures(piece)).isEmpty
+
+  private lazy val isStalemate = !kingIsInCheck(initiative) && noPossibleMovesOrCaptures
 
   private lazy val insufficientMaterial = {
     val pieces = board.pieces.values
@@ -264,7 +312,9 @@ case class Game(
   lazy val isDraw: Boolean = isStalemate || insufficientMaterial
 
   /** Checks if initiative king is in checkmate */
-  lazy val isCheckMate: Boolean = kingIsInCheck(initiative) && noPossibleMoves
+  lazy val isCheckMate: Boolean = kingIsInCheck(initiative) && noPossibleMovesOrCaptures
+
+  lazy val ended: Boolean = noPossibleMovesOrCaptures
 
   private def validate(condition: Boolean, validation: Game => Boolean, error: => Error): Either[Error, Unit] =
     if (condition) {
@@ -279,7 +329,7 @@ case class Game(
 
   lazy val moveParser = new MoveParser(this)
 
-  def executeMove(move: String): EitherT[IO, Error, Game] =
+  def executeMove(move: String)(implicit pf: PrinterFactory[_]): EitherT[IO, Error, Game] =
     EitherT.fromEither[IO](moveParser.parse(move)).flatMap {
       case SimpleMove(piece, target, mustEndInCheck, mustEndInMate, move) =>
         moveTo(piece, target).finalizeMove(mustEndInCheck, mustEndInMate, move)(piece.position, target)
@@ -307,17 +357,30 @@ case class Game(
         capture(piece, target).finalizeMove(mustEndInCheck, mustEndInMate, move)(piece.position, targetPosition)
     }
 
-  def executeMoves(firstMove: String, moreMoves: String*): EitherT[IO, Error, Game] =
+  def executeMoves(firstMove: String, moreMoves: String*)(implicit pf: PrinterFactory[_]): EitherT[IO, Error, Game] =
     moreMoves.foldLeft(executeMove(firstMove)) { case (state, move) =>
       state.flatMap(_.executeMove(move))
     }
 
-  def executeMoves(moves: List[String]): EitherT[IO, Error, Game] = executeMoves(moves.head, moves.tail: _*)
-  def executePGNMoves(moves: String): EitherT[IO, Error, Game] = executeMoves(Parser.movesFromPGN(moves))
+  def executeMoves(moves: List[String])(implicit pf: PrinterFactory[_]): EitherT[IO, Error, Game] =
+    executeMoves(moves.head, moves.tail: _*)
 
+  def executePGNMoves(moves: String)(implicit pf: PrinterFactory[_]): EitherT[IO, Error, Game] = executeMoves(
+    Parser.movesFromPGN(moves),
+  )
 }
 
 object Game {
+
+  def apply(
+    initiative: Colour,
+    board: Board,
+    whiteCaptures: Set[Piece] = Set.empty,
+    blackCaptures: Set[Piece] = Set.empty,
+    moveLog: List[String] = Nil,
+    lastMove: Option[(Piece, Position)] = None,
+  ): Game = Game(State(initiative, board, lastMove), whiteCaptures, blackCaptures, moveLog)
+
   lazy val initial: Game = Game(White, Board.initial)
 
   def withPieces(pieces: Piece*): Game =
@@ -331,6 +394,8 @@ object Game {
       move: String,
     )(
       highlights: Position*,
+    )(
+      implicit pf: PrinterFactory[_],
     ): EitherT[IO, Error, Game] = {
       val game = for {
         game <- either
@@ -338,7 +403,7 @@ object Game {
         _ <- game.validate(mustEndInCheck, _.kingIsInCheck(game.initiative), MoveIsNotCheck(game, kingPosition))
         _ <- game.validate(mustEndInMate, _.isCheckMate, MoveIsNotMate(game, kingPosition))
       } yield game.addToLog(move)
-      EitherT(game.traverse(game => game.print(highlights.toSet).as(game)))
+      EitherT(game.traverse(game => game.show(highlights.toSet).as(game)))
     }
   }
 }

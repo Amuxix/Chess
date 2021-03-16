@@ -39,12 +39,12 @@ object Board {
 
     val pieces = List(
       Rook.apply(colour, _: Position),
-      Knight.apply(colour, _: Position),
-      Bishop.apply(colour, _: Position),
-      Queen.apply(colour, _: Position),
+      Knight.apply(colour, _: Position, hasMoved = true),
+      Bishop.apply(colour, _: Position, hasMoved = true),
+      Queen.apply(colour, _: Position, hasMoved = true),
       King.apply(colour, _: Position),
-      Bishop.apply(colour, _: Position),
-      Knight.apply(colour, _: Position),
+      Bishop.apply(colour, _: Position, hasMoved = true),
+      Knight.apply(colour, _: Position, hasMoved = true),
       Rook.apply(colour, _: Position),
     )
 

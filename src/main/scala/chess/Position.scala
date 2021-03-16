@@ -2,13 +2,11 @@ package chess
 
 import chess.Position.byPositionTuple
 
-sealed abstract class Position(val fileInt: Int, val rankInt: Int) extends HasIcon with Named {
-  lazy val algebraicNotation: String = className
+sealed abstract class Position(val fileInt: Int, val rankInt: Int) extends Named {
+  lazy val algebraicNotation: String = className.toLowerCase
   //lazy val algebraicNotation: String = Position.position2AlgebraicNotation(this)
   lazy val Array(file, rank) = algebraicNotation.split("")
   lazy val squareColour: Colour = if (fileInt % 2 == rankInt % 2) White else Black
-
-  lazy val icon: String = " "
 
   def +(t: (Int, Int)): Option[Position] = t match {
     case (file, rank) => byPositionTuple.get(this.fileInt + file, this.rankInt + rank)
@@ -65,6 +63,45 @@ sealed abstract class Position(val fileInt: Int, val rankInt: Int) extends HasIc
 
   lazy val allAround: Set[Position] = diagonalsAround ++ adjacent
 }
+
+object Position {
+  val all: List[Position] = List(
+    //format: off
+    A8, B8, C8, D8, E8, F8, G8, H8,
+    A7, B7, C7, D7, E7, F7, G7, H7,
+    A6, B6, C6, D6, E6, F6, G6, H6,
+    A5, B5, C5, D5, E5, F5, G5, H5,
+    A4, B4, C4, D4, E4, F4, G4, H4,
+    A3, B3, C3, D3, E3, F3, G3, H3,
+    A2, B2, C2, D2, E2, F2, G2, H2,
+    A1, B1, C1, D1, E1, F1, G1, H1,
+    //format: on
+  )
+
+  val allSet: Set[Position] = all.toSet
+
+  private val algebraicNotation2Position: Map[String, Position] = all.map(position => position.algebraicNotation -> position).toMap
+
+  val byRank: Map[Int, List[Position]] = all.groupBy(_.rankInt)//.view.mapValues(_.sortBy(_.fileInt)).toMap
+
+  val byFile: Map[Int, List[Position]] = all.groupBy(_.fileInt)//.view.mapValues(_.sortBy(_.rankInt)).toMap
+
+  val byPositionTuple: Map[(Int, Int), Position] =
+    all.map { case position @ Position(file, rank) =>
+      (file, rank) -> position
+    }.toMap
+
+  def fromAlgebraicNotation(algebraicNotation: String): Either[Error, Position] =
+    algebraicNotation2Position
+      .get(algebraicNotation)
+      .toRight(AlgebraicNotationParseError(algebraicNotation))
+
+  def unapply(position: Position): Option[(Int, Int)] = Some(position.fileInt, position.rankInt)
+
+  /*implicit def ordering(implicit tupleOrdering: Ordering[(Int, Int)]): Ordering[Position] =
+    (x: Position, y: Position) => tupleOrdering.compare((-x.rankInt, x.fileInt), (-y.rankInt, y.fileInt))*/
+}
+
 case object A8 extends Position(0, 7)
 case object B8 extends Position(1, 7)
 case object C8 extends Position(2, 7)
@@ -129,107 +166,3 @@ case object E1 extends Position(4, 0)
 case object F1 extends Position(5, 0)
 case object G1 extends Position(6, 0)
 case object H1 extends Position(7, 0)
-
-object Position {
-  val all: List[Position] = List(
-    //format: off
-    A8, B8, C8, D8, E8, F8, G8, H8,
-    A7, B7, C7, D7, E7, F7, G7, H7,
-    A6, B6, C6, D6, E6, F6, G6, H6,
-    A5, B5, C5, D5, E5, F5, G5, H5,
-    A4, B4, C4, D4, E4, F4, G4, H4,
-    A3, B3, C3, D3, E3, F3, G3, H3,
-    A2, B2, C2, D2, E2, F2, G2, H2,
-    A1, B1, C1, D1, E1, F1, G1, H1,
-    //format: on
-  )
-
-  private val algebraicNotation2Position: Map[String, Position] = all.map(position => position.algebraicNotation -> position).toMap
-  /*private val algebraicNotation2Position: Map[String, Position] = Map(
-    "A8" -> A8,
-    "B8" -> B8,
-    "C8" -> C8,
-    "D8" -> D8,
-    "E8" -> E8,
-    "F8" -> F8,
-    "G8" -> G8,
-    "H8" -> H8,
-    "A7" -> A7,
-    "B7" -> B7,
-    "C7" -> C7,
-    "D7" -> D7,
-    "E7" -> E7,
-    "F7" -> F7,
-    "G7" -> G7,
-    "H7" -> H7,
-    "A6" -> A6,
-    "B6" -> B6,
-    "C6" -> C6,
-    "D6" -> D6,
-    "E6" -> E6,
-    "F6" -> F6,
-    "G6" -> G6,
-    "H6" -> H6,
-    "A5" -> A5,
-    "B5" -> B5,
-    "C5" -> C5,
-    "D5" -> D5,
-    "E5" -> E5,
-    "F5" -> F5,
-    "G5" -> G5,
-    "H5" -> H5,
-    "A4" -> A4,
-    "B4" -> B4,
-    "C4" -> C4,
-    "D4" -> D4,
-    "E4" -> E4,
-    "F4" -> F4,
-    "G4" -> G4,
-    "H4" -> H4,
-    "A3" -> A3,
-    "B3" -> B3,
-    "C3" -> C3,
-    "D3" -> D3,
-    "E3" -> E3,
-    "F3" -> F3,
-    "G3" -> G3,
-    "H3" -> H3,
-    "A2" -> A2,
-    "B2" -> B2,
-    "C2" -> C2,
-    "D2" -> D2,
-    "E2" -> E2,
-    "F2" -> F2,
-    "G2" -> G2,
-    "H2" -> H2,
-    "A1" -> A1,
-    "B1" -> B1,
-    "C1" -> C1,
-    "D1" -> D1,
-    "E1" -> E1,
-    "F1" -> F1,
-    "G1" -> G1,
-    "H1" -> H1,
-  )*/
-  private lazy val position2AlgebraicNotation: Map[Position, String] = algebraicNotation2Position.map(_.swap)
-  //val all: List[Position] = algebraicNotation2Position.values.toList.sortBy(position => (7 - position.rankInt) * 7 + position.fileInt)
-
-  val byRank: Map[Int, List[Position]] = all.groupBy(_.rankInt)//.view.mapValues(_.sortBy(_.fileInt)).toMap
-
-  val byFile: Map[Int, List[Position]] = all.groupBy(_.fileInt)//.view.mapValues(_.sortBy(_.rankInt)).toMap
-
-  val byPositionTuple: Map[(Int, Int), Position] =
-    all.map { case position @ Position(file, rank) =>
-      (file, rank) -> position
-    }.toMap
-
-  def fromAlgebraicNotation(algebraicNotation: String): Either[Error, Position] =
-    algebraicNotation2Position
-      .get(algebraicNotation.toUpperCase)
-      .toRight(AlgebraicNotationParseError(algebraicNotation))
-
-  def unapply(position: Position): Option[(Int, Int)] = Some(position.fileInt, position.rankInt)
-
-  /*implicit def ordering(implicit tupleOrdering: Ordering[(Int, Int)]): Ordering[Position] =
-    (x: Position, y: Position) => tupleOrdering.compare((-x.rankInt, x.fileInt), (-y.rankInt, y.fileInt))*/
-}

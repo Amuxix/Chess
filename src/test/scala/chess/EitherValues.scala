@@ -1,9 +1,12 @@
 package chess
 
+import chess.printers.AsciiPrinter
+import chess.printers.GamePrinter.PrinterFactory
 import org.scalactic.source
 import org.scalatest.exceptions.{StackDepthException, TestFailedException}
 
 trait EitherValues {
+  implicit val printerFactory: PrinterFactory[String] = AsciiPrinter.factory
 
   implicit def toEitherValue[R](either: Either[Error, R])(implicit pos: source.Position): EitherValue[R] =
     new EitherValue(either, pos)
