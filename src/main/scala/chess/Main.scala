@@ -143,6 +143,17 @@ object Main extends IOApp.Simple {
     }
   }
 
+  /*override def run: IO[Unit] = {
+    val game =
+      Parser.gameFromFEN("rnbqkb1r/pppppppp/8/8/4n3/2N2Q2/PPPP1PPP/R1B1KBNR b KQkq - 1 3").get       //Attack with queen
+    val game2 = Parser.gameFromFEN("rnbqkb1r/pppppppp/8/8/4N3/8/PPPP1PPP/R1BQKBNR b KQkq - 0 3").get //Take with Knight
+    val eval1 = Evaluator(game).evaluation
+    val eval2 = Evaluator(game2).evaluation
+    println(eval1)
+    println(eval2)
+    IO.unit
+  }*/
+
   /*override def run: IO[Unit] =
     ImageGamePrinter.resource.use { _ =>
       //val game = Parser.gameFromFEN("Q4bkr/4p1p1/8/5pNp/5B2/8/PPR2qPP/2K1R3 b - - 3 21").get //Mate in 1
