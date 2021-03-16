@@ -36,25 +36,41 @@ case class Evaluator(
       //lazy val whitePieceValue = game.colourPieces(White).sumBy(_.captureValue)
       //lazy val blackPieceValue = game.colourPieces(Black).sumBy(_.captureValue)
       //lazy val pointsOffBoard = (totalBoardPoints - whitePieceValue - blackPieceValue) / 1000
+      def attackers(colour: Colour) = Position.all.foldLeft(Map.empty[Position, Set[Piece]]) {
+        case (attackers, position) => attackers + ((position, game.attackers(position, colour)))
+      }
+
       def pointsByColour(colour: Colour): Int = {
+        //println(s"Evaluating $colour pieces")
+        lazy val thisAttackers = attackers(colour)
+        lazy val otherAttackers = attackers(colour.other)
         lazy val aroundOpposingKing = game.findKing(colour.other).position.allAround
         game.colourPieces(colour).foldLeft(0) { case (total, piece) =>
-          total + piece.captureValue + game.threatenedPositions(piece).toList.foldLeft(0) { case (total, target) =>
-            //lazy val positionWeight = (500 * weightedPositions(pointsOffBoard)(target)).toInt
-            lazy val positionWeight = 500
-            lazy val emptySquare = piece match {
+          //println(s"  $piece capture value ${piece.captureValue}")
+          total + (piece.captureValue + game.threatenedPositions(piece).toList.foldLeft(0) { case (total, target) =>
+            lazy val positionWeight = 5
+            lazy val emptySquareValue = piece match {
               case _: King                                  => positionWeight
-              case _ if aroundOpposingKing.contains(target) => 5000
+              case _ if aroundOpposingKing.contains(target) => 500
               case _                                        => positionWeight
             }
-            lazy val targetValue = game.board.pieces.get(target).fold(emptySquare) {
-              case target if target.colour == colour => target.defendValue + piece.threat
-              case target                            => target.attackValue + piece.threat
+            lazy val attackerDifference =
+              (thisAttackers(target).size - 1, otherAttackers(target).size) match {
+                case (ours, others) if ours >= 1 && ours == others => 2 //Leaving this would make this piece hanging
+                case (ours, others) if others > ours               => 1 //We are losing on defenders moving would be bad
+                case _                                             => 0
+              }
+            lazy val targetValue = game.board.pieces.get(target).fold(emptySquareValue) {
+              case targetPiece if targetPiece.colour == colour => targetPiece.defendValue
+              case targetPiece                                 => targetPiece.attackValue
             }
-            total + targetValue
-          }
+            //println(s"    $target value ${targetValue * attackerDifference} attackers = ${thisAttackers(target).mkString(", ")} otherAttackers = ${otherAttackers(target).mkString(", ")}")
+            total + targetValue * attackerDifference
+          }) //.tap(total => println(s"  Piece total $total"))
         }
+        //.tap(total => println(s"Colour total $total"))
       }
+      //println(s"Starting new evaluation")
       pointsByColour(game.initiative) - pointsByColour(game.initiative.other)
     }
 
@@ -274,6 +290,12 @@ case class Evaluator(
                   )
               }
             _ <- bestMoveSoFar.set(Some(bestResult))
+            /*if (depth % 2 == 1) {
+                IO.println(s"Best so far is $evaluation ${moves(path)}") *>
+                  bestMoveSoFar.set(Some(bestResult))
+              } else {
+                IO.unit
+              }*/
           } yield bestResult
       }
       .flatMap(transformResult)
@@ -336,30 +358,30 @@ object Evaluator { outer =>
     }
 
     lazy val attackValue: Int = piece match {
-      case _: King   => 10000
-      case _: Queen  => 4500
-      case _: Rook   => 2500
-      case _: Bishop => 1550
-      case _: Knight => 1500
-      case _: Pawn   => 500
+      case _: King   => 1000
+      case _: Queen  => 450
+      case _: Rook   => 250
+      case _: Bishop => 155
+      case _: Knight => 150
+      case _: Pawn   => 50
     }
 
     lazy val defendValue: Int = piece match {
       case _: King   => 0
-      case _: Queen  => 4500
-      case _: Rook   => 2500
-      case _: Bishop => 1550
-      case _: Knight => 150
-      case _: Pawn   => 500
+      case _: Queen  => 450
+      case _: Rook   => 250
+      case _: Bishop => 155
+      case _: Knight => 15
+      case _: Pawn   => 50
     }
 
     lazy val threat: Int = piece match {
       case _: King   => 1
-      case _: Queen  => 100
-      case _: Rook   => 500
-      case _: Bishop => 700
-      case _: Knight => 700
-      case _: Pawn   => 900
+      case _: Queen  => 1
+      case _: Rook   => 5
+      case _: Bishop => 7
+      case _: Knight => 7
+      case _: Pawn   => 9
     }
   }
 

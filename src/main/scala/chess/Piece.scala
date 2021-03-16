@@ -25,6 +25,8 @@ sealed abstract class Piece extends Named {
       vector <- vectorCaptures
       target <- position + vector
     } yield target
+
+  override def toString: String = s"${AlgebraicNotation.pieceString(this)}${position.algebraicNotation}"
 }
 
 object Piece {
@@ -170,4 +172,6 @@ case class Pawn(colour: Colour, position: Position, hasMoved: Boolean = false) e
   override def pieceType: PieceType = Pawn
 
   override def moveToPosition(position: Position): Pawn = copy(position = position, hasMoved = true)
+
+  override def toString: String = position.algebraicNotation
 }
