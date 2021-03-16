@@ -2,11 +2,11 @@ package chess
 
 import cats.syntax.option._
 
-sealed abstract class Piece extends HasIcon with Named {
+sealed abstract class Piece extends Named {
   def colour: Colour
   def position: Position
   def hasMoved: Boolean
-  protected def pieceType: PieceType
+  def pieceType: PieceType
   val jumpsPieces: Boolean = pieceType.jumpsPieces
   def moveToPosition(position: Position): Piece
 
@@ -79,12 +79,7 @@ object King extends SameCaptures {
 }
 
 case class King(colour: Colour, position: Position, hasMoved: Boolean = false) extends Piece {
-  override protected def pieceType: PieceType = King
-
-  override def icon: String = colour match {
-    case White => "♔"
-    case Black => "♚"
-  }
+  override def pieceType: PieceType = King
 
   override def moveToPosition(position: Position): King = copy(position = position, hasMoved = true)
 }
@@ -97,12 +92,7 @@ object Queen extends SameCaptures {
 }
 
 case class Queen(colour: Colour, position: Position, hasMoved: Boolean = false) extends Piece {
-  override protected def pieceType: PieceType = Queen
-
-  override def icon: String = colour match {
-    case White => "♕"
-    case Black => "♛"
-  }
+  override def pieceType: PieceType = Queen
 
   override def moveToPosition(position: Position): Queen = copy(position = position, hasMoved = true)
 }
@@ -121,12 +111,7 @@ object Rook extends SameCaptures {
 }
 
 case class Rook(colour: Colour, position: Position, hasMoved: Boolean = false) extends Piece {
-  override protected def pieceType: PieceType = Rook
-
-  override def icon: String = colour match {
-    case White => "♖"
-    case Black => "♜"
-  }
+  override def pieceType: PieceType = Rook
 
   override def moveToPosition(position: Position): Rook = copy(position = position, hasMoved = true)
 }
@@ -145,12 +130,7 @@ object Bishop extends SameCaptures {
 }
 
 case class Bishop(colour: Colour, position: Position, hasMoved: Boolean = false) extends Piece {
-  override protected def pieceType: PieceType = Bishop
-
-  override def icon: String = colour match {
-    case White => "♗"
-    case Black => "♝"
-  }
+  override def pieceType: PieceType = Bishop
 
   override def moveToPosition(position: Position): Bishop = copy(position = position, hasMoved = true)
 }
@@ -170,12 +150,7 @@ object Knight extends SameCaptures {
 
 case class Knight(colour: Colour, position: Position, hasMoved: Boolean = false) extends Piece {
 
-  override protected def pieceType: PieceType = Knight
-
-  override def icon: String = colour match {
-    case White => "♘"
-    case Black => "♞"
-  }
+  override def pieceType: PieceType = Knight
 
   override def moveToPosition(position: Position): Knight = copy(position = position, hasMoved = true)
 }
@@ -192,12 +167,7 @@ object Pawn extends PieceType {
 }
 
 case class Pawn(colour: Colour, position: Position, hasMoved: Boolean = false) extends Piece {
-  override protected def pieceType: PieceType = Pawn
-
-  override def icon: String = colour match {
-    case White => "♙"
-    case Black => "♟"
-  }
+  override def pieceType: PieceType = Pawn
 
   override def moveToPosition(position: Position): Pawn = copy(position = position, hasMoved = true)
 }

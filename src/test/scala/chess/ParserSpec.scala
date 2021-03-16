@@ -1,7 +1,5 @@
 package chess
 
-import cats.data.OptionT
-import cats.effect.IO
 import org.scalatest.OptionValues
 import cats.effect.unsafe.implicits.global
 
@@ -153,6 +151,15 @@ class ParserSpec extends ChessSpec with OptionValues {
         .value
         .unsafeRunSync()
         .isRightOrThrow shouldBe true
+    }
+    "fail for FEN with invalid number of lines" in {
+      Parser.gameFromFEN("8/3p4/KPp4r/1R3p1k/4P3/6P1/8 w - c6 0 1").isEmpty shouldBe true
+    }
+    "fail for FEN when line has more than 8 positions" in {
+      Parser.gameFromFEN("9/8/3p4/KPp4r/1R3p1k/4P3/6P1/8 w - c6 0 1").isEmpty shouldBe true
+    }
+    "fail for FEN when invalid piece exists" in {
+      Parser.gameFromFEN("8/8/3z4/KPp4r/1R3p1k/4P3/6P1/8 w - c6 0 1").isEmpty shouldBe true
     }
   }
 

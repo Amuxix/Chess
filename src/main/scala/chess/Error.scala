@@ -1,5 +1,7 @@
 package chess
 
+import chess.printers.GamePrinter.PrinterFactory
+
 sealed trait Error {
   val message: String
 }
@@ -8,8 +10,8 @@ sealed trait HighlightedPositions { this: Error =>
   val game: Game
   val highlightedPositions: Seq[Position]
 
-  lazy val boardWithError: String =
-    GamePrinter.withIcons(game).withHighlights(highlightedPositions.toSet).withHeader.withFooter(message).string
+  def boardWithError(implicit pf: PrinterFactory[String]): String =
+    pf(game).withHighlights(highlightedPositions.toSet).withIcons.withHeader.withFooter(message).create
 }
 
 case class AlgebraicNotationParseError(algebraicNotation: String) extends Error {
@@ -96,6 +98,18 @@ case object EnPassantNotPossible extends Error {
   override val message: String = "En passant not possible"
 }
 
+case object InvalidLastMovedPieceForEnPassant extends Error {
+  override val message: String = "Piece moved last turn was not a Pawn"
+}
+
+case object InvalidTargetForEnPassant extends Error {
+  override val message: String = "Target piece must be the Pawn that just moved"
+}
+
+case object InvalidCapturingPiece extends Error {
+  override val message: String = "Only Pawns can capture en passant"
+}
+
 case class WrongRankForEnPassant(game: Game, highlightedPositions: Position*) extends Error with HighlightedPositions {
   override val message: String = "The capturing pawn must be on its fifth rank"
 }
@@ -108,4 +122,8 @@ case class NoPreviousDoubleStepMoveEnPassant(game: Game, highlightedPositions: P
     extends Error
     with HighlightedPositions {
   override val message: String = "The captured pawn must have just moved two squares in a single move"
+}
+
+case object CouldNotIdentifyMove extends Error {
+  override val message: String = "Could not identify move"
 }

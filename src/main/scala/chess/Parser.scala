@@ -1,6 +1,7 @@
 package chess
 
 import cats.syntax.option._
+import chess.printers.AsciiPrinter
 
 object Parser {
 
@@ -11,7 +12,7 @@ object Parser {
     ((c: Colour) => Bishop(c, A1)) -> "B",
     ((c: Colour) => Knight(c, A1)) -> "N",
   ).flatMap { case (builder, letter) =>
-    List(White, Black).map(builder(_).icon -> letter)
+    List(White, Black).map(colour => AsciiPrinter.pieceIcon(builder(colour)) -> letter)
   }
 
   private def convertIconsToString(string: String) =
@@ -48,26 +49,31 @@ object Parser {
           lines.zip(List.range(7, -1, -1)).foldLeft(Map.empty[Position, Piece]) { case (pieces, (line, rank)) =>
             val (_, finalPieces) = line.split("").foldLeft((0, pieces)) { case ((file, pieces), char) =>
               lazy val position = Position.byPositionTuple(file, rank)
-              def createPiece(string: String): Piece = string match {
-                case "Q" => Queen(White, position)
-                case "K" => King(White, position)
-                case "R" =>
-                  val hasMoved = (file != 0 || !castlingAvailability.contains("Q")) &&
-                    (file != 7 || !castlingAvailability.contains("K"))
-                  Rook(White, position, hasMoved)
-                case "B" => Bishop(White, position)
-                case "N" => Knight(White, position)
-                case "P" => Pawn(White, position, hasMoved = rank != 1)
-                case "q" => Queen(Black, position)
-                case "k" => King(Black, position)
-                case "r" =>
-                  val hasMoved = (file != 0 || !castlingAvailability.contains("q")) &&
-                    (file != 7 || !castlingAvailability.contains("k"))
-                  Rook(Black, position, hasMoved)
-                case "b" => Bishop(Black, position)
-                case "n" => Knight(Black, position)
-                case "p" => Pawn(Black, position, hasMoved = rank != 6)
-              }
+              def createPiece(string: String): Piece =
+                string match {
+                  case "Q" => Queen(White, position, hasMoved = true)
+                  case "K" =>
+                    val hasMoved = !castlingAvailability.contains("Q") && !castlingAvailability.contains("K")
+                    King(White, position, hasMoved)
+                  case "R" =>
+                    val hasMoved = (file != 0 || !castlingAvailability.contains("Q")) &&
+                      (file != 7 || !castlingAvailability.contains("K"))
+                    Rook(White, position, hasMoved)
+                  case "B" => Bishop(White, position, hasMoved = true)
+                  case "N" => Knight(White, position, hasMoved = true)
+                  case "P" => Pawn(White, position, hasMoved = rank != 1)
+                  case "q" => Queen(Black, position, hasMoved = true)
+                  case "k" =>
+                    val hasMoved = !castlingAvailability.contains("q") && !castlingAvailability.contains("k")
+                    King(Black, position, hasMoved)
+                  case "r" =>
+                    val hasMoved = (file != 0 || !castlingAvailability.contains("q")) &&
+                      (file != 7 || !castlingAvailability.contains("k"))
+                    Rook(Black, position, hasMoved)
+                  case "b" => Bishop(Black, position, hasMoved = true)
+                  case "n" => Knight(Black, position, hasMoved = true)
+                  case "p" => Pawn(Black, position, hasMoved = rank != 6)
+                }
               char.toIntOption.fold {
                 (file + 1, pieces + (position -> createPiece(char)))
               } { empty =>

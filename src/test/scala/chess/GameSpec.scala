@@ -155,5 +155,11 @@ class GameSpec extends ChessSpec {
 
       Game.initial.executePGNMoves(moves).value.unsafeRunSync().isRightOrThrow shouldBe true
     }
+    "Not stalemate if there is at least 1 capture left" in {
+      Parser.gameFromFEN("kQ6/7R/8/8/8/8/8/K7 b - - 0 1").get.isDraw shouldBe false
+    }
+    "Not stalemate if there is at least 1 move left" in {
+      Parser.gameFromFEN("k7/3Q4/8/8/8/8/8/K7 b - - 0 1").get.isDraw shouldBe false
+    }
   }
 }
